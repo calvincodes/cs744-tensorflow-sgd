@@ -61,10 +61,9 @@ def copied_from_mitron():
     y = tf.placeholder(tf.float32, [None, 10])  # 0-9 digits recognition => 10 classes
 
     # Assigns ops to the local worker by default.
-    with tf.device(tf.train.replica_device_setter(cluster=clusterinfo)):
-        # Set model weights
-        W = tf.Variable(tf.zeros([784, 10]))
-        b = tf.Variable(tf.zeros([10]))
+    # Set model weights
+    W = tf.Variable(tf.zeros([784, 10]))
+    b = tf.Variable(tf.zeros([10]))
 
     # Construct model
     pred = tf.nn.softmax(tf.matmul(x, W) + b)  # Softmax
