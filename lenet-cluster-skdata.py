@@ -18,23 +18,37 @@ import numpy as np
 import json
 import os
 
-BUFFER_SIZE = 10000
-BATCH_SIZE = 64
+tf.app.flags.DEFINE_integer("task_index", 0, "Index of task with in the job.")
+FLAGS = tf.app.flags.FLAGS
 
-# Scaling MNIST data from (0, 255] to (0., 1.]
-def scale(image, label):
-  image = tf.cast(image, tf.float32)
-  image /= 255
-  return image, label
+from sklearn.datasets import fetch_openml
+dataset = fetch_openml('mnist_784')
 
-datasets, info = tfds.load(name='mnist',
-                           with_info=True,
-                           as_supervised=True)
+# # Download the MNIST dataset
+# dataset = datasets.fetch_mldata("MNIST Original")
 
-train_datasets_unbatched = datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
-train_datasets = train_datasets_unbatched.batch(BATCH_SIZE)
+# Reshape the data to a (70000, 28, 28) tensor
+data = dataset.data.reshape((dataset.data.shape[0], 28, 28))
 
-def build_and_compile_cnn_model():
+# Reshape the data to a (70000, 28, 28, 1) tensord
+data = data[:, :, :, np.newaxis]
+
+# Scale values from range of [0-255] to [0-1]
+scaled_data = data / 255.0
+
+# Split the dataset into training and test sets
+(train_data, test_data, train_labels, test_labels) = train_test_split(
+    scaled_data,
+    dataset.target.astype("int"),
+    test_size = 0.33)
+
+# Tranform training labels to one-hot encoding
+train_labels = np_utils.to_categorical(train_labels, 10)
+
+# Tranform test labels to one-hot encoding
+test_labels = np_utils.to_categorical(test_labels, 10)
+
+def build_and_compile_lenet_model():
     # Create a sequential model
     model = Sequential()
 
@@ -95,25 +109,39 @@ def build_and_compile_cnn_model():
 
 os.environ['TF_CONFIG'] = json.dumps({
     'cluster': {
-        'worker': ["localhost:12345", "localhost:23456"]
+        'worker': ["10.10.1.1:2222", "10.10.1.2:2222", "10.10.1.3:2222"]
     },
-    'task': {'type': 'worker', 'index': 0}
+    'task': {'type': 'worker', 'index': FLAGS.task_index}
 })
 
 strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+print ('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-NUM_WORKERS = 2
+NUM_WORKERS = 3
 # Here the batch size scales up by number of workers since
 # `tf.data.Dataset.batch` expects the global batch size. Previously we used 64,
 # and now this becomes 128.
 GLOBAL_BATCH_SIZE = 64 * NUM_WORKERS
-train_datasets = train_datasets_unbatched.batch(GLOBAL_BATCH_SIZE)
+# train_datasets = train_datasets_unbatched.batch(GLOBAL_BATCH_SIZE)
 with strategy.scope():
-  multi_worker_model = build_and_compile_cnn_model()
-# Train the model
-multi_worker_model.fit(
-    train_datasets,
-    train_labels,
-    batch_size = 128,
-    nb_epoch = 20,
-	  verbose = 1)
+    multi_worker_model = build_and_compile_lenet_model()
+
+    # Train the model
+    multi_worker_model.fit(
+        train_data,
+        train_labels,
+        batch_size = GLOBAL_BATCH_SIZE,
+        # steps_per_epoch = 10,
+        epochs = 3,
+          verbose = 1)
+
+if FLAGS.task_index == 0:
+    # Evaluate the model
+    (loss, accuracy) = multi_worker_model.evaluate(
+        test_data,
+        test_labels,
+        batch_size = GLOBAL_BATCH_SIZE,
+        verbose = 3)
+
+    # Print the model's accuracy
+    print(accuracy)
