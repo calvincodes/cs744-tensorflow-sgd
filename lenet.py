@@ -19,7 +19,8 @@ import time
 start_time = time.time()
 
 EPOCHS = 6
-BASE_BATCH_SIZE = 64
+BASE_BATCH_SIZE = 256
+EVAL_BATCH_SIZE = BASE_BATCH_SIZE
 
 # Declaring task_index flag which will be later used to run cluster mode
 tf.app.flags.DEFINE_integer("task_index", 0, "Index of task with in the job.")
@@ -63,7 +64,6 @@ numWorker = {
 os.environ['TF_CONFIG'] = clusterSpec[FLAGS.deploy_mode]
 NUM_WORKERS = numWorker[FLAGS.deploy_mode]
 GLOBAL_BATCH_SIZE = BASE_BATCH_SIZE * NUM_WORKERS
-EVAL_BATCH_SIZE = GLOBAL_BATCH_SIZE
 
 # # Downloading the MNIST dataset
 dataset = input_data.read_data_sets("MNIST_data/")
